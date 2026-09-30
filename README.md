@@ -5,6 +5,7 @@ Minimal backbone implementation for a WhatsApp customer-support serviceline.
 ## Implemented message flow
 
 1. WhatsApp webhook receives incoming messages (`/webhook/whatsapp`).
+   - If `WHATSAPP_WEBHOOK_SECRET` is configured, clients must send matching `X-Webhook-Secret` header.
 2. Webhook stores each message in Redis session storage and publishes to RabbitMQ topic `wa.inbound`.
 3. `wa.inbound` subscriber stores each message on filesystem by sender/date.
 4. Redis aggregation worker emits one aggregated message to `wa.aggregated` when session TTL expires.

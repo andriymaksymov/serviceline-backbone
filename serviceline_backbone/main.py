@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 
 from .broker import RabbitMQBroker
@@ -25,19 +26,23 @@ def create_app():
     class LazyInboundService:
         def __init__(self) -> None:
             self._service = None
+            self._lock = threading.Lock()
 
         def handle_message(self, message) -> str:
             if self._service is None:
-                settings = Settings()
-                broker = RabbitMQBroker(settings.rabbitmq_url, settings.rabbitmq_exchange)
-                store = RedisSessionStore(settings.redis_url, settings.redis_session_ttl_seconds)
-                approval_store = RedisApprovalStore(settings.redis_url, settings.approval_ttl_seconds)
-                outbound = WhatsAppOutboundClient(settings.whatsapp_outbound_url)
-                approval_flow = ApprovalFlow(settings, approval_store, outbound)
-                self._service = InboundService(settings, broker, store, approval_flow=approval_flow)
+                with self._lock:
+                    if self._service is None:
+                        settings = Settings()
+                        broker = RabbitMQBroker(settings.rabbitmq_url, settings.rabbitmq_exchange)
+                        store = RedisSessionStore(settings.redis_url, settings.redis_session_ttl_seconds)
+                        approval_store = RedisApprovalStore(settings.redis_url, settings.approval_ttl_seconds)
+                        outbound = WhatsAppOutboundClient(settings.whatsapp_outbound_url)
+                        approval_flow = ApprovalFlow(settings, approval_store, outbound)
+                        self._service = InboundService(settings, broker, store, approval_flow=approval_flow)
             return self._service.handle_message(message)
 
-    return build_app(LazyInboundService())
+    webhook_secret = Settings().whatsapp_webhook_secret
+    return build_app(LazyInboundService(), webhook_secret=webhook_secret)
 
 
 app = create_app()

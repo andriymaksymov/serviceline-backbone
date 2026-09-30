@@ -92,9 +92,10 @@ class InMemorySessionStore:
         messages.append(message)
         self._sessions[message.sender] = (current_ts + self._ttl, session_id, messages)
 
-    def drain_ready_sessions(self, now_ts: float) -> list[SessionAggregate]:
+    def drain_ready_sessions(self, now_ts: float | None = None) -> list[SessionAggregate]:
+        current_ts = now_ts if now_ts is not None else datetime.now(timezone.utc).timestamp()
         ready: list[SessionAggregate] = []
-        finished = [sender for sender, (expires, _, _) in self._sessions.items() if expires <= now_ts]
+        finished = [sender for sender, (expires, _, _) in self._sessions.items() if expires <= current_ts]
         for sender in finished:
             _, session_id, messages = self._sessions.pop(sender)
             ready.append(SessionAggregate(sender=sender, session_id=session_id, messages=messages))
