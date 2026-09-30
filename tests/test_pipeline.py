@@ -6,10 +6,17 @@ from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
 from serviceline_backbone.broker import InMemoryBroker
-from serviceline_backbone.models import AggregatedMessage, WhatsAppInboundMessage
-from serviceline_backbone.pipeline import InboundService, RedisAggregationWorker, WaAggregatedSubscriber
+from serviceline_backbone.models import AIResultMessage, AggregatedMessage, PendingApproval, WhatsAppInboundMessage
+from serviceline_backbone.pipeline import (
+    ApprovalFlow,
+    InboundService,
+    RedisAggregationWorker,
+    WaAggregatedSubscriber,
+    WhatsAppOutboundClient,
+    WhatsAppResultSubscriber,
+)
+from serviceline_backbone.storage import InMemoryApprovalStore, InMemorySessionStore
 from serviceline_backbone.webhook import build_app
-from serviceline_backbone.storage import InMemorySessionStore
 
 
 class FakeEmbeddingClient:
@@ -28,6 +35,17 @@ class FakeSessionStore:
 
     def add_message(self, message: WhatsAppInboundMessage) -> None:
         self.items.append(message)
+
+
+class FakeOutboundClient(WhatsAppOutboundClient):
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    def send(self, to: str, text: str, extra_payload: dict | None = None) -> None:
+        item = {"to": to, "text": text}
+        if extra_payload:
+            item.update(extra_payload)
+        self.sent.append(item)
 
 
 class PipelineTests(unittest.TestCase):
@@ -56,6 +74,79 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "accepted")
         self.assertEqual(len(store.items), 1)
         self.assertEqual(len(broker.messages["wa.inbound"]), 1)
+
+    def test_approval_ok_forwards_to_original_customer(self) -> None:
+        broker = InMemoryBroker()
+        store = FakeSessionStore()
+        approval_store = InMemoryApprovalStore()
+        outbound = FakeOutboundClient()
+
+        class _Settings:
+            whatsapp_target_account = "+19999999999"
+            approval_command_prefix = "/ok"
+
+        result = AIResultMessage(
+            sender="+10000000000",
+            response_text="AI draft answer",
+            source_session_id="session-1",
+            used_context=[],
+        )
+        approval_store.save(
+            PendingApproval(
+                source_session_id=result.source_session_id,
+                original_sender=result.sender,
+                suggested_response_text=result.response_text,
+            )
+        )
+
+        approval_flow = ApprovalFlow(_Settings(), approval_store, outbound)
+        inbound_service = InboundService(_Settings(), broker, store, approval_flow=approval_flow)
+        app = build_app(inbound_service)
+        client = TestClient(app)
+
+        response = client.post(
+            "/webhook/whatsapp",
+            json={
+                "sender": "+19999999999",
+                "text": "/ok session-1 Final approved answer",
+                "message_id": "m1",
+                "timestamp": "2026-01-01T00:00:00Z",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "approved")
+        self.assertEqual(len(outbound.sent), 1)
+        self.assertEqual(outbound.sent[0]["to"], "+10000000000")
+        self.assertEqual(outbound.sent[0]["text"], "Final approved answer")
+        self.assertEqual(len(store.items), 0)
+        self.assertEqual(len(broker.messages["wa.inbound"]), 0)
+
+    def test_ai_result_is_sent_to_reviewer_with_metadata(self) -> None:
+        approval_store = InMemoryApprovalStore()
+        outbound = FakeOutboundClient()
+
+        class _Settings:
+            whatsapp_outbound_url = "http://example.local/send"
+            whatsapp_target_account = "+19999999999"
+            approval_command_prefix = "/ok"
+
+        subscriber = WhatsAppResultSubscriber(_Settings(), approval_store, outbound)
+        subscriber.handle(
+            AIResultMessage(
+                sender="+10000000000",
+                response_text="Draft answer",
+                source_session_id="session-42",
+                used_context=[],
+            ).model_dump(mode="json")
+        )
+
+        self.assertEqual(len(outbound.sent), 1)
+        self.assertEqual(outbound.sent[0]["to"], "+19999999999")
+        self.assertEqual(outbound.sent[0]["source_session_id"], "session-42")
+        self.assertEqual(outbound.sent[0]["original_sender"], "+10000000000")
+        self.assertIn("source_session_id: session-42", outbound.sent[0]["text"])
+        self.assertIn("original_sender: +10000000000", outbound.sent[0]["text"])
 
     def test_aggregates_after_ttl_expiry(self) -> None:
         broker = InMemoryBroker()

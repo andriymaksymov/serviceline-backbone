@@ -7,15 +7,17 @@ from .broker import RabbitMQBroker
 from .config import TOPIC_AI_INBOUND, TOPIC_AI_RESULT, TOPIC_WA_AGGREGATED, TOPIC_WA_INBOUND, Settings
 from .pipeline import (
     AIInboundSubscriber,
+    ApprovalFlow,
     ContextRetriever,
     EmbeddingClient,
     InboundService,
     RedisAggregationWorker,
     WaAggregatedSubscriber,
     WaInboundSubscriber,
+    WhatsAppOutboundClient,
     WhatsAppResultSubscriber,
 )
-from .storage import RedisSessionStore
+from .storage import RedisApprovalStore, RedisSessionStore
 from .webhook import build_app
 
 
@@ -29,8 +31,11 @@ def create_app():
                 settings = Settings()
                 broker = RabbitMQBroker(settings.rabbitmq_url, settings.rabbitmq_exchange)
                 store = RedisSessionStore(settings.redis_url, settings.redis_session_ttl_seconds)
-                self._service = InboundService(settings, broker, store)
-            self._service.handle_message(message)
+                approval_store = RedisApprovalStore(settings.redis_url, settings.approval_ttl_seconds)
+                outbound = WhatsAppOutboundClient(settings.whatsapp_outbound_url)
+                approval_flow = ApprovalFlow(settings, approval_store, outbound)
+                self._service = InboundService(settings, broker, store, approval_flow=approval_flow)
+            return self._service.handle_message(message)
 
     return build_app(LazyInboundService())
 
@@ -77,7 +82,8 @@ def run_worker() -> None:
     elif role == "ai_result_subscriber":
         settings = Settings()
         broker = RabbitMQBroker(settings.rabbitmq_url, settings.rabbitmq_exchange)
-        handler = WhatsAppResultSubscriber(settings).handle
+        approval_store = RedisApprovalStore(settings.redis_url, settings.approval_ttl_seconds)
+        handler = WhatsAppResultSubscriber(settings, approval_store).handle
         broker.consume_forever(TOPIC_AI_RESULT, handler)
         return
 

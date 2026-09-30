@@ -27,6 +27,8 @@ class Settings:
 
     whatsapp_outbound_url: str = field(default_factory=lambda: os.getenv("WHATSAPP_OUTBOUND_URL", ""))
     whatsapp_target_account: str = field(default_factory=lambda: os.getenv("WHATSAPP_TARGET_ACCOUNT", ""))
+    approval_command_prefix: str = field(default_factory=lambda: os.getenv("APPROVAL_COMMAND_PREFIX", "/ok"))
+    approval_ttl_seconds: int = field(default_factory=lambda: int(os.getenv("APPROVAL_TTL_SECONDS", "86400")))
 
     system_prompt_path: Path = field(
         default_factory=lambda: Path(os.getenv("SYSTEM_PROMPT_PATH", "./config/system_prompt.txt")).resolve()

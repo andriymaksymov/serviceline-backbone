@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib import request
 
 from .config import TOPIC_AI_INBOUND, TOPIC_AI_RESULT, TOPIC_WA_AGGREGATED, TOPIC_WA_INBOUND, Settings
-from .models import AIInboundMessage, AIResultMessage, AggregatedMessage, ContextItem, WhatsAppInboundMessage
+from .models import AIInboundMessage, AIResultMessage, AggregatedMessage, ContextItem, PendingApproval, WhatsAppInboundMessage
 
 logger = logging.getLogger(__name__)
 
@@ -63,14 +63,19 @@ class ContextRetriever:
 
 
 class InboundService:
-    def __init__(self, settings: Settings, broker, session_store) -> None:
+    def __init__(self, settings: Settings, broker, session_store, approval_flow=None) -> None:
         self._settings = settings
         self._broker = broker
         self._store = session_store
+        self._approval_flow = approval_flow
 
-    def handle_message(self, message: WhatsAppInboundMessage) -> None:
+    def handle_message(self, message: WhatsAppInboundMessage) -> str:
+        if self._approval_flow and self._approval_flow.is_approval_message(message):
+            approved = self._approval_flow.handle_approval(message)
+            return "approved" if approved else "approval_rejected"
         self._store.add_message(message)
         self._broker.publish(TOPIC_WA_INBOUND, message.model_dump(mode="json"))
+        return "accepted"
 
 
 class WaInboundSubscriber:
@@ -153,23 +158,104 @@ class AIInboundSubscriber:
         self._broker.publish(TOPIC_AI_RESULT, result.model_dump(mode="json"))
 
 
-class WhatsAppResultSubscriber:
-    def __init__(self, settings: Settings) -> None:
+class WhatsAppOutboundClient:
+    def __init__(self, outbound_url: str) -> None:
+        self._outbound_url = outbound_url
+
+    def send(self, to: str, text: str, extra_payload: dict | None = None) -> None:
+        outbound = {"to": to, "text": text}
+        if extra_payload:
+            outbound.update(extra_payload)
+        req = request.Request(
+            self._outbound_url,
+            data=json.dumps(outbound).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with request.urlopen(req, timeout=10):
+            return
+
+
+def format_reviewer_message(result: AIResultMessage, command_prefix: str) -> str:
+    return (
+        "[REVIEW REQUIRED]\n"
+        f"source_session_id: {result.source_session_id}\n"
+        f"original_sender: {result.sender}\n\n"
+        "Edit the answer if needed and send:\n"
+        f"{command_prefix} {result.source_session_id} <approved_or_edited_answer>\n\n"
+        f"Suggested answer:\n{result.response_text}"
+    )
+
+
+def parse_approval_command(text: str, command_prefix: str) -> tuple[str, str] | None:
+    stripped = text.strip()
+    if not stripped.startswith(command_prefix):
+        return None
+    remainder = stripped[len(command_prefix) :].strip()
+    if not remainder:
+        return None
+    parts = remainder.split(maxsplit=1)
+    if len(parts) < 2:
+        return None
+    source_session_id, approved_text = parts[0].strip(), parts[1].strip()
+    if not source_session_id or not approved_text:
+        return None
+    return source_session_id, approved_text
+
+
+class ApprovalFlow:
+    def __init__(self, settings: Settings, approval_store, outbound_client: WhatsAppOutboundClient) -> None:
         self._settings = settings
+        self._approval_store = approval_store
+        self._outbound_client = outbound_client
+
+    def is_approval_message(self, message: WhatsAppInboundMessage) -> bool:
+        return (
+            bool(self._settings.whatsapp_target_account)
+            and message.sender == self._settings.whatsapp_target_account
+            and message.text.strip().startswith(self._settings.approval_command_prefix)
+        )
+
+    def handle_approval(self, message: WhatsAppInboundMessage) -> bool:
+        parsed = parse_approval_command(message.text, self._settings.approval_command_prefix)
+        if not parsed:
+            return False
+        source_session_id, approved_text = parsed
+        pending = self._approval_store.pop(source_session_id)
+        if not pending:
+            return False
+        self._outbound_client.send(
+            to=pending.original_sender,
+            text=approved_text,
+            extra_payload={
+                "source_session_id": pending.source_session_id,
+                "approved_by": message.sender,
+            },
+        )
+        return True
+
+
+class WhatsAppResultSubscriber:
+    def __init__(self, settings: Settings, approval_store, outbound_client: WhatsAppOutboundClient | None = None) -> None:
+        self._settings = settings
+        self._approval_store = approval_store
+        self._outbound_client = outbound_client or WhatsAppOutboundClient(settings.whatsapp_outbound_url)
 
     def handle(self, payload: dict) -> None:
         result = AIResultMessage.model_validate(payload)
         if not self._settings.whatsapp_outbound_url or not self._settings.whatsapp_target_account:
             logger.warning("Skipping WhatsApp outbound delivery: WHATSAPP_OUTBOUND_URL or WHATSAPP_TARGET_ACCOUNT is missing")
             return
-        outbound = {
-            "to": self._settings.whatsapp_target_account,
-            "text": f"[{result.sender}] {result.response_text}",
-        }
-        req = request.Request(
-            self._settings.whatsapp_outbound_url,
-            data=json.dumps(outbound).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+        pending = PendingApproval(
+            source_session_id=result.source_session_id,
+            original_sender=result.sender,
+            suggested_response_text=result.response_text,
         )
-        with request.urlopen(req, timeout=10):
-            return
+        self._approval_store.save(pending)
+        self._outbound_client.send(
+            to=self._settings.whatsapp_target_account,
+            text=format_reviewer_message(result, self._settings.approval_command_prefix),
+            extra_payload={
+                "source_session_id": result.source_session_id,
+                "original_sender": result.sender,
+            },
+        )

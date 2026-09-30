@@ -38,3 +38,9 @@ class AIResultMessage(BaseModel):
     response_text: str
     source_session_id: str
     used_context: list[ContextItem]
+
+
+class PendingApproval(BaseModel):
+    source_session_id: str
+    original_sender: str
+    suggested_response_text: str

@@ -10,8 +10,8 @@ def build_app(inbound_service) -> FastAPI:
 
     @app.post("/webhook/whatsapp")
     async def whatsapp_webhook(message: WhatsAppInboundMessage) -> dict[str, str]:
-        inbound_service.handle_message(message)
-        return {"status": "accepted"}
+        status = inbound_service.handle_message(message)
+        return {"status": status}
 
     @app.get("/health")
     async def health() -> dict[str, str]:

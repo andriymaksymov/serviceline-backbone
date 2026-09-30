@@ -7,7 +7,7 @@ from typing import Iterable
 
 import redis
 
-from .models import WhatsAppInboundMessage
+from .models import PendingApproval, WhatsAppInboundMessage
 
 
 @dataclass
@@ -97,3 +97,37 @@ class InMemorySessionStore:
             _, session_id, messages = self._sessions.pop(sender)
             ready.append(SessionAggregate(sender=sender, session_id=session_id, messages=messages))
         return ready
+
+
+class RedisApprovalStore:
+    def __init__(self, redis_url: str, ttl_seconds: int) -> None:
+        self._redis = redis.Redis.from_url(redis_url, decode_responses=True)
+        self._ttl = ttl_seconds
+
+    @staticmethod
+    def _key(session_id: str) -> str:
+        return f"approval:{session_id}"
+
+    def save(self, item: PendingApproval) -> None:
+        self._redis.set(self._key(item.source_session_id), item.model_dump_json(), ex=self._ttl)
+
+    def pop(self, source_session_id: str) -> PendingApproval | None:
+        key = self._key(source_session_id)
+        with self._redis.pipeline() as pipe:
+            pipe.get(key)
+            pipe.delete(key)
+            value, _ = pipe.execute()
+        if not value:
+            return None
+        return PendingApproval.model_validate_json(value)
+
+
+class InMemoryApprovalStore:
+    def __init__(self) -> None:
+        self._items: dict[str, PendingApproval] = {}
+
+    def save(self, item: PendingApproval) -> None:
+        self._items[item.source_session_id] = item
+
+    def pop(self, source_session_id: str) -> PendingApproval | None:
+        return self._items.pop(source_session_id, None)

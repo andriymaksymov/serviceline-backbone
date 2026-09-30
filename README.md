@@ -10,7 +10,9 @@ Minimal backbone implementation for a WhatsApp customer-support serviceline.
 4. Redis aggregation worker emits one aggregated message to `wa.aggregated` when session TTL expires.
 5. `wa.aggregated` subscriber generates embeddings (`BAAI/bge-small-en-v1.5` via embedding service API), queries Qdrant with threshold `CONFIDENCE_THRESHOLD` (default 0.35), then publishes to `ai.inbound`.
 6. `ai.inbound` subscriber enriches with `config/system_prompt.txt`, calls OpenAI API, then publishes to `ai.result`.
-7. `ai.result` subscriber forwards answer to configured WhatsApp account.
+7. `ai.result` subscriber forwards answer to configured reviewer WhatsApp account and includes `source_session_id` + original sender metadata.
+8. Reviewer edits/approves by sending: `/ok <source_session_id> <approved text>` to webhook.
+9. Webhook resolves original sender from approval state and forwards the approved text to the original customer account.
 
 ## Topics
 
