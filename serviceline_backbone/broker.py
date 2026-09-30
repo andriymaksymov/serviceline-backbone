@@ -27,9 +27,16 @@ class RabbitMQBroker:
         return self._connection, self._channel
 
     def publish(self, topic: str, payload: dict) -> None:
+        import pika
+
         _connection, channel = self._connect()
         body = json.dumps(payload).encode("utf-8")
-        channel.basic_publish(exchange=self._exchange, routing_key=topic, body=body)
+        channel.basic_publish(
+            exchange=self._exchange,
+            routing_key=topic,
+            body=body,
+            properties=pika.BasicProperties(delivery_mode=2),
+        )
 
     def consume_forever(self, topic: str, handler: Handler) -> None:
         connection, channel = self._connect()
