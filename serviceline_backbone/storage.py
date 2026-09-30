@@ -71,6 +71,8 @@ class RedisSessionStore:
 
 
 class InMemorySessionStore:
+    """In-memory session store that uses sliding TTL, matching RedisSessionStore behavior."""
+
     def __init__(self, ttl_seconds: int) -> None:
         self._ttl = ttl_seconds
         self._sessions: dict[str, tuple[float, str, list[WhatsAppInboundMessage]]] = {}

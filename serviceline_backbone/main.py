@@ -33,13 +33,13 @@ def run_worker() -> None:
         broker.consume_forever(TOPIC_WA_INBOUND, handler)
         return
 
-    if role == "redis_aggregator":
+    elif role == "redis_aggregator":
         worker = RedisAggregationWorker(broker, store)
         while True:
             worker.poll_once()
             time.sleep(1)
 
-    if role == "wa_aggregated_subscriber":
+    elif role == "wa_aggregated_subscriber":
         handler = WaAggregatedSubscriber(
             broker,
             EmbeddingClient(settings.embedding_service_url, settings.embedding_model),
@@ -48,14 +48,15 @@ def run_worker() -> None:
         broker.consume_forever(TOPIC_WA_AGGREGATED, handler)
         return
 
-    if role == "ai_inbound_subscriber":
+    elif role == "ai_inbound_subscriber":
         handler = AIInboundSubscriber(settings, broker).handle
         broker.consume_forever(TOPIC_AI_INBOUND, handler)
         return
 
-    if role == "ai_result_subscriber":
+    elif role == "ai_result_subscriber":
         handler = WhatsAppResultSubscriber(settings).handle
         broker.consume_forever(TOPIC_AI_RESULT, handler)
         return
 
-    raise RuntimeError("Unknown WORKER_ROLE")
+    else:
+        raise RuntimeError("Unknown WORKER_ROLE")
