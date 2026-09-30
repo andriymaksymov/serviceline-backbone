@@ -38,7 +38,6 @@ def run_worker() -> None:
         while True:
             worker.poll_once()
             time.sleep(1)
-        return
 
     if role == "wa_aggregated_subscriber":
         handler = WaAggregatedSubscriber(

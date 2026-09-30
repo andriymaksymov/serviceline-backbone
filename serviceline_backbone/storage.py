@@ -86,7 +86,7 @@ class InMemorySessionStore:
             return
         expires_at, session_id, messages = self._sessions[message.sender]
         messages.append(message)
-        self._sessions[message.sender] = (expires_at, session_id, messages)
+        self._sessions[message.sender] = (current_ts + self._ttl, session_id, messages)
 
     def drain_ready_sessions(self, now_ts: float) -> list[SessionAggregate]:
         ready: list[SessionAggregate] = []

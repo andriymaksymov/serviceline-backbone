@@ -81,7 +81,7 @@ class PipelineTests(unittest.TestCase):
         sent = worker.poll_once(now_ts=14)
         self.assertEqual(sent, 0)
 
-        sent = worker.poll_once(now_ts=16)
+        sent = worker.poll_once(now_ts=18)
         self.assertEqual(sent, 1)
 
         aggregated_payload = broker.messages["wa.aggregated"].popleft()
