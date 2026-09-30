@@ -75,11 +75,12 @@ class InMemorySessionStore:
         self._ttl = ttl_seconds
         self._sessions: dict[str, tuple[float, str, list[WhatsAppInboundMessage]]] = {}
 
-    def add_message(self, message: WhatsAppInboundMessage, now_ts: float) -> None:
+    def add_message(self, message: WhatsAppInboundMessage, now_ts: float | None = None) -> None:
+        current_ts = now_ts if now_ts is not None else datetime.now(timezone.utc).timestamp()
         if message.sender not in self._sessions:
             self._sessions[message.sender] = (
-                now_ts + self._ttl,
-                f"{message.sender}:{int(now_ts)}",
+                current_ts + self._ttl,
+                f"{message.sender}:{int(current_ts)}",
                 [message],
             )
             return
