@@ -238,20 +238,21 @@ class WhatsAppResultSubscriber:
     def __init__(self, settings: Settings, approval_store, outbound_client: WhatsAppOutboundClient | None = None) -> None:
         self._settings = settings
         self._approval_store = approval_store
-        self._outbound_client = outbound_client or WhatsAppOutboundClient(settings.whatsapp_outbound_url)
+        self._outbound_client = outbound_client
 
     def handle(self, payload: dict) -> None:
         result = AIResultMessage.model_validate(payload)
-        if not self._settings.whatsapp_outbound_url or not self._settings.whatsapp_target_account:
-            logger.warning("Skipping WhatsApp outbound delivery: WHATSAPP_OUTBOUND_URL or WHATSAPP_TARGET_ACCOUNT is missing")
-            return
         pending = PendingApproval(
             source_session_id=result.source_session_id,
             original_sender=result.sender,
             suggested_response_text=result.response_text,
         )
         self._approval_store.save(pending)
-        self._outbound_client.send(
+        if not self._settings.whatsapp_outbound_url or not self._settings.whatsapp_target_account:
+            logger.warning("Skipping WhatsApp outbound delivery: WHATSAPP_OUTBOUND_URL or WHATSAPP_TARGET_ACCOUNT is missing")
+            return
+        outbound_client = self._outbound_client or WhatsAppOutboundClient(self._settings.whatsapp_outbound_url)
+        outbound_client.send(
             to=self._settings.whatsapp_target_account,
             text=format_reviewer_message(result, self._settings.approval_command_prefix),
             extra_payload={

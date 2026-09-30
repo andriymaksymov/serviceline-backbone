@@ -113,10 +113,7 @@ class RedisApprovalStore:
 
     def pop(self, source_session_id: str) -> PendingApproval | None:
         key = self._key(source_session_id)
-        with self._redis.pipeline() as pipe:
-            pipe.get(key)
-            pipe.delete(key)
-            value, _ = pipe.execute()
+        value = self._redis.getdel(key)
         if not value:
             return None
         return PendingApproval.model_validate_json(value)
