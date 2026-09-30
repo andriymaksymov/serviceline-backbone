@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -48,7 +49,11 @@ def create_app():
 app = create_app()
 
 
+logger = logging.getLogger(__name__)
+
+
 def run_worker() -> None:
+    logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     role = os.getenv("WORKER_ROLE", "")
     if role == "wa_inbound_subscriber":
         settings = Settings()
@@ -63,7 +68,11 @@ def run_worker() -> None:
         store = RedisSessionStore(settings.redis_url, settings.redis_session_ttl_seconds)
         worker = RedisAggregationWorker(broker, store)
         while True:
-            worker.poll_once()
+            try:
+                worker.poll_once()
+            except Exception:
+                # e.g. Redis briefly unavailable; claimed-but-unpublished sessions are released by poll_once.
+                logger.exception("Aggregation poll failed")
             time.sleep(1)
 
     elif role == "wa_aggregated_subscriber":

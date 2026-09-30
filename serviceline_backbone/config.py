@@ -19,7 +19,7 @@ class Settings:
     qdrant_collection: str = field(default_factory=lambda: os.getenv("QDRANT_COLLECTION", "knowledge"))
     confidence_threshold: float = field(default_factory=lambda: float(os.getenv("CONFIDENCE_THRESHOLD", "0.35")))
 
-    embedding_service_url: str = field(default_factory=lambda: os.getenv("EMBEDDING_SERVICE_URL", "http://embeddings:8080/embed"))
+    embedding_service_url: str = field(default_factory=lambda: os.getenv("EMBEDDING_SERVICE_URL", "http://embeddings:8000/embed"))
     embedding_model: str = field(default_factory=lambda: os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5"))
 
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))

@@ -1,25 +1,59 @@
+x-app: &app
+  build: .
+  env_file:
+    - .env
+  restart: unless-stopped
+
 services:
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    restart: unless-stopped
 
   rabbitmq:
     image: rabbitmq:3-management
     ports:
       - "5672:5672"
       - "15672:15672"
-
+    restart: unless-stopped
+    environment:
+      # Set in .env (gitignored); compose reads it for ${...} substitution. Fails fast if missing.
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Set RABBITMQ_DEFAULT_PASS in .env}
+      RABBITMQ_VM_MEMORY_HIGH_WATERMARK: "0.25"
+      RABBITMQ_DISK_FREE_LIMIT: "50000000"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq-definitions.json:/etc/rabbitmq/definitions.json
+    command:
+      bash -c "rabbitmq-server &
+      sleep 5 &&
+      rabbitmqctl import_definitions /etc/rabbitmq/definitions.json &&
+      tail -f /var/log/rabbitmq/*"
+    
   qdrant:
-    image: qdrant/qdrant:v1.9.0
+    # Keep in step with the qdrant-client version in uv.lock; query_points needs server >= 1.10.
+    image: qdrant/qdrant:v1.19.1
     ports:
       - "6333:6333"
+    restart: unless-stopped
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+      QDRANT__LOG_LEVEL: INFO
+
+  embeddings:
+    build: ./serviceline_backbone/embeddings
+    ports:
+      # Host port 8001: 8000 is taken by the webhook. Containers reach it at http://embeddings:8000.
+      - "8001:8000"
+    restart: unless-stopped
 
   webhook:
-    build: .
+    <<: *app
     command: uvicorn serviceline_backbone.main:app --host 0.0.0.0 --port 8000
-    env_file:
-      - .env
     ports:
       - "8000:8000"
     depends_on:
@@ -27,53 +61,51 @@ services:
       - rabbitmq
 
   wa-inbound-subscriber:
-    build: .
+    <<: *app
     command: python -c "from serviceline_backbone.main import run_worker; run_worker()"
     environment:
       WORKER_ROLE: wa_inbound_subscriber
-    env_file:
-      - .env
+    volumes:
+      - message-archive:/app/data/messages
     depends_on:
       - rabbitmq
 
   redis-aggregator:
-    build: .
+    <<: *app
     command: python -c "from serviceline_backbone.main import run_worker; run_worker()"
     environment:
       WORKER_ROLE: redis_aggregator
-    env_file:
-      - .env
     depends_on:
       - redis
       - rabbitmq
 
   wa-aggregated-subscriber:
-    build: .
+    <<: *app
     command: python -c "from serviceline_backbone.main import run_worker; run_worker()"
     environment:
       WORKER_ROLE: wa_aggregated_subscriber
-    env_file:
-      - .env
     depends_on:
+      - embeddings
       - qdrant
       - rabbitmq
 
   ai-inbound-subscriber:
-    build: .
+    <<: *app
     command: python -c "from serviceline_backbone.main import run_worker; run_worker()"
     environment:
       WORKER_ROLE: ai_inbound_subscriber
-    env_file:
-      - .env
     depends_on:
       - rabbitmq
 
   ai-result-subscriber:
-    build: .
+    <<: *app
     command: python -c "from serviceline_backbone.main import run_worker; run_worker()"
     environment:
       WORKER_ROLE: ai_result_subscriber
-    env_file:
-      - .env
     depends_on:
       - rabbitmq
+
+volumes:
+  message-archive:
+  qdrant_storage:
+  rabbitmq_data:
