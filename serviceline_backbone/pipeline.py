@@ -222,6 +222,7 @@ class ApprovalFlow:
         source_session_id, approved_text = parsed
         pending = self._approval_store.pop(source_session_id)
         if not pending:
+            logger.warning("Approval rejected: no pending approval found for session_id=%s", source_session_id)
             return False
         self._outbound_client.send(
             to=pending.original_sender,
@@ -254,7 +255,7 @@ class WhatsAppResultSubscriber:
             logger.warning("Skipping WhatsApp outbound delivery: WHATSAPP_TARGET_ACCOUNT is missing")
             return
         if self._outbound_client is None and not outbound_url:
-            logger.warning("Skipping WhatsApp outbound delivery: WHATSAPP_OUTBOUND_URL or WHATSAPP_TARGET_ACCOUNT is missing")
+            logger.warning("Skipping WhatsApp outbound delivery: WHATSAPP_OUTBOUND_URL is missing")
             return
         outbound_client = self._outbound_client or WhatsAppOutboundClient(outbound_url)
         outbound_client.send(

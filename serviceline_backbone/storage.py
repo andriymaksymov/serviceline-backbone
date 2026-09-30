@@ -50,8 +50,11 @@ class RedisSessionStore:
 
     def drain_ready_sessions(self, now_ts: float | None = None) -> Iterable[SessionAggregate]:
         now = now_ts if now_ts is not None else datetime.now(timezone.utc).timestamp()
-        senders = self._redis.zrangebyscore(self._expiry_key(), 0, now)
+        expiry_key = self._expiry_key()
+        senders = self._redis.zrangebyscore(expiry_key, 0, now)
         for sender in senders:
+            if self._redis.zrem(expiry_key, sender) == 0:
+                continue
             messages_key = self._messages_key(sender)
             session_id_key = self._session_id_key(sender)
             with self._redis.pipeline() as pipe:
@@ -59,7 +62,6 @@ class RedisSessionStore:
                 pipe.get(session_id_key)
                 pipe.delete(messages_key)
                 pipe.delete(session_id_key)
-                pipe.zrem(self._expiry_key(), sender)
                 rows, session_id, *_ = pipe.execute()
             messages = [WhatsAppInboundMessage.model_validate_json(item) for item in rows]
             if messages:
