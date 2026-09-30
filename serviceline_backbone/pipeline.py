@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import timezone
 from pathlib import Path
 from urllib import request
 
 from .config import TOPIC_AI_INBOUND, TOPIC_AI_RESULT, TOPIC_WA_AGGREGATED, TOPIC_WA_INBOUND, Settings
 from .models import AIInboundMessage, AIResultMessage, AggregatedMessage, ContextItem, WhatsAppInboundMessage
+
+logger = logging.getLogger(__name__)
 
 
 def persist_inbound_to_file(message: WhatsAppInboundMessage, root: Path) -> Path:
@@ -132,14 +135,14 @@ class AIInboundSubscriber:
             f"Knowledge context:\n{context_block if context_block else 'No extra context found.'}"
         )
 
-        response = self._openai.responses.create(
+        response = self._openai.chat.completions.create(
             model=self._settings.openai_model,
-            input=[
+            messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
         )
-        output_text = response.output_text
+        output_text = response.choices[0].message.content if response.choices else ""
 
         result = AIResultMessage(
             sender=inbound.aggregated.sender,
@@ -157,6 +160,7 @@ class WhatsAppResultSubscriber:
     def handle(self, payload: dict) -> None:
         result = AIResultMessage.model_validate(payload)
         if not self._settings.whatsapp_outbound_url or not self._settings.whatsapp_target_account:
+            logger.warning("Skipping WhatsApp outbound delivery: WHATSAPP_OUTBOUND_URL or WHATSAPP_TARGET_ACCOUNT is missing")
             return
         outbound = {
             "to": self._settings.whatsapp_target_account,

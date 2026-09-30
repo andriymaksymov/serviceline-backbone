@@ -1,4 +1,4 @@
-FROM python:3.14-rc-slim
+FROM python:3.12-slim
 WORKDIR /app
 COPY pyproject.toml README.md /app/
 COPY serviceline_backbone /app/serviceline_backbone

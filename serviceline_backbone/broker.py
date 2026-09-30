@@ -37,10 +37,11 @@ class RabbitMQBroker:
         channel.queue_declare(queue=queue, durable=True)
         channel.queue_bind(exchange=self._exchange, queue=queue, routing_key=topic)
 
-        def wrapped(_ch, _method, _props, body: bytes) -> None:
+        def wrapped(ch, method, _props, body: bytes) -> None:
             handler(json.loads(body.decode("utf-8")))
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
-        channel.basic_consume(queue=queue, on_message_callback=wrapped, auto_ack=True)
+        channel.basic_consume(queue=queue, on_message_callback=wrapped, auto_ack=False)
         channel.start_consuming()
 
 

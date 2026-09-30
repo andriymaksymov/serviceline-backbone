@@ -34,8 +34,8 @@ class RedisSessionStore:
     def _expiry_key() -> str:
         return "sessions:expiry"
 
-    def add_message(self, message: WhatsAppInboundMessage) -> None:
-        now = datetime.now(timezone.utc).timestamp()
+    def add_message(self, message: WhatsAppInboundMessage, now_ts: float | None = None) -> None:
+        now = now_ts if now_ts is not None else datetime.now(timezone.utc).timestamp()
         expires_at = now + self._ttl
         messages_key = self._messages_key(message.sender)
         session_id_key = self._session_id_key(message.sender)
