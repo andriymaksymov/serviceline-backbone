@@ -142,7 +142,7 @@ class AIInboundSubscriber:
                 {"role": "user", "content": user_prompt},
             ],
         )
-        output_text = response.choices[0].message.content if response.choices else ""
+        output_text = (response.choices[0].message.content or "") if response.choices else ""
 
         result = AIResultMessage(
             sender=inbound.aggregated.sender,

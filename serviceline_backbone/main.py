@@ -20,11 +20,19 @@ from .webhook import build_app
 
 
 def create_app():
-    settings = Settings()
-    broker = RabbitMQBroker(settings.rabbitmq_url, settings.rabbitmq_exchange)
-    store = RedisSessionStore(settings.redis_url, settings.redis_session_ttl_seconds)
-    inbound_service = InboundService(settings, broker, store)
-    return build_app(inbound_service)
+    class LazyInboundService:
+        def __init__(self) -> None:
+            self._service = None
+
+        def handle_message(self, message) -> None:
+            if self._service is None:
+                settings = Settings()
+                broker = RabbitMQBroker(settings.rabbitmq_url, settings.rabbitmq_exchange)
+                store = RedisSessionStore(settings.redis_url, settings.redis_session_ttl_seconds)
+                self._service = InboundService(settings, broker, store)
+            self._service.handle_message(message)
+
+    return build_app(LazyInboundService())
 
 
 app = create_app()

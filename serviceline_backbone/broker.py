@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict, deque
 from typing import Callable
 
+
 Handler = Callable[[dict], None]
+logger = logging.getLogger(__name__)
 
 
 class RabbitMQBroker:
@@ -45,7 +48,12 @@ class RabbitMQBroker:
         channel.queue_bind(exchange=self._exchange, queue=queue, routing_key=topic)
 
         def wrapped(ch, method, _props, body: bytes) -> None:
-            handler(json.loads(body.decode("utf-8")))
+            try:
+                handler(json.loads(body.decode("utf-8")))
+            except Exception:
+                logger.exception("Failed to process message from topic %s", topic)
+                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                return
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
         channel.basic_consume(queue=queue, on_message_callback=wrapped, auto_ack=False)
