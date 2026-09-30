@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import timezone
 from pathlib import Path
+from urllib import error
 from urllib import request
 
 from .config import TOPIC_AI_INBOUND, TOPIC_AI_RESULT, TOPIC_WA_AGGREGATED, TOPIC_WA_INBOUND, Settings
@@ -171,8 +172,13 @@ class WhatsAppOutboundClient:
             data=json.dumps(outbound).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with request.urlopen(req, timeout=10):
-            return
+        try:
+            with request.urlopen(req, timeout=10) as response:
+                response.read()
+        except error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            logger.error("WhatsApp outbound request failed status=%s body=%s", exc.code, body)
+            raise
 
 
 def format_reviewer_message(result: AIResultMessage, command_prefix: str) -> str:
@@ -218,6 +224,7 @@ class ApprovalFlow:
     def handle_approval(self, message: WhatsAppInboundMessage) -> bool:
         parsed = parse_approval_command(message.text, self._settings.approval_command_prefix)
         if not parsed:
+            logger.warning("Approval rejected: malformed command from reviewer sender=%s", message.sender)
             return False
         source_session_id, approved_text = parsed
         pending = self._approval_store.pop(source_session_id)

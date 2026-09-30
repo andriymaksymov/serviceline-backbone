@@ -26,7 +26,7 @@ def create_app():
         def __init__(self) -> None:
             self._service = None
 
-        def handle_message(self, message) -> None:
+        def handle_message(self, message) -> str:
             if self._service is None:
                 settings = Settings()
                 broker = RabbitMQBroker(settings.rabbitmq_url, settings.rabbitmq_exchange)
