@@ -248,12 +248,17 @@ class WhatsAppResultSubscriber:
             suggested_response_text=result.response_text,
         )
         self._approval_store.save(pending)
-        if not self._settings.whatsapp_outbound_url or not self._settings.whatsapp_target_account:
+        outbound_url = getattr(self._settings, "whatsapp_outbound_url", "")
+        target_account = getattr(self._settings, "whatsapp_target_account", "")
+        if not target_account:
+            logger.warning("Skipping WhatsApp outbound delivery: WHATSAPP_TARGET_ACCOUNT is missing")
+            return
+        if self._outbound_client is None and not outbound_url:
             logger.warning("Skipping WhatsApp outbound delivery: WHATSAPP_OUTBOUND_URL or WHATSAPP_TARGET_ACCOUNT is missing")
             return
-        outbound_client = self._outbound_client or WhatsAppOutboundClient(self._settings.whatsapp_outbound_url)
+        outbound_client = self._outbound_client or WhatsAppOutboundClient(outbound_url)
         outbound_client.send(
-            to=self._settings.whatsapp_target_account,
+            to=target_account,
             text=format_reviewer_message(result, self._settings.approval_command_prefix),
             extra_payload={
                 "source_session_id": result.source_session_id,

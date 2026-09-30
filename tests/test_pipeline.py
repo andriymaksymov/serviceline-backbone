@@ -120,7 +120,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(outbound.sent[0]["to"], "+10000000000")
         self.assertEqual(outbound.sent[0]["text"], "Final approved answer")
         self.assertEqual(len(store.items), 0)
-        self.assertEqual(len(broker.messages["wa.inbound"]), 0)
+        self.assertNotIn("wa.inbound", broker.messages)
 
     def test_ai_result_is_sent_to_reviewer_with_metadata(self) -> None:
         approval_store = InMemoryApprovalStore()

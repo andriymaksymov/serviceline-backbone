@@ -83,7 +83,8 @@ def run_worker() -> None:
         settings = Settings()
         broker = RabbitMQBroker(settings.rabbitmq_url, settings.rabbitmq_exchange)
         approval_store = RedisApprovalStore(settings.redis_url, settings.approval_ttl_seconds)
-        handler = WhatsAppResultSubscriber(settings, approval_store).handle
+        outbound = WhatsAppOutboundClient(settings.whatsapp_outbound_url)
+        handler = WhatsAppResultSubscriber(settings, approval_store, outbound).handle
         broker.consume_forever(TOPIC_AI_RESULT, handler)
         return
 
