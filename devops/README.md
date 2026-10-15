@@ -56,7 +56,10 @@ ENV_FILE=.env.production bash devops/deploy.sh user@host     # first time
 bash devops/deploy.sh user@host                              # deploy HEAD
 bash devops/deploy.sh user@host v1.2.0                       # deploy a tag/branch/sha
 SSH_OPTS="-p 2222 -i ~/.ssh/vm_key" bash devops/deploy.sh user@host
+REMOTE_SUDO=1 bash devops/deploy.sh user@host                # SSH user needs sudo on the VM
 ```
+
+With `REMOTE_SUDO=1`, the code is uploaded to `/tmp` as the SSH user. One SSH session then moves it into place and runs `activate.sh` with `sudo`. If you run the command from a terminal, sudo prompts for the password once. Without a tty, for example when Claude runs it, sudo must be passwordless.
 
 ## 4. Roll back
 
