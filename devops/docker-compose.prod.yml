@@ -1,0 +1,25 @@
+# Production overrides, layered on top of ../docker-compose.yml by devops/activate.sh.
+# Requires Docker Compose >= 2.24.4 (for !reset / !override).
+#
+# Docker-published ports bypass ufw/iptables rules, so infrastructure services must not publish
+# on 0.0.0.0. Only the webhook (8000) stays public; reach the rest through an SSH tunnel, e.g.
+#   ssh -L 15672:localhost:15672 -L 6333:localhost:6333 user@host
+services:
+  redis:
+    ports: !reset []
+
+  rabbitmq:
+    ports: !override
+      - "127.0.0.1:15672:15672"
+    # The app declares its own exchanges/queues (broker.py), and rabbitmq-definitions.json is not in
+    # the repo, so use the image's default entrypoint instead of the definitions-import wrapper.
+    command: !reset null
+    volumes: !override
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  qdrant:
+    ports: !override
+      - "127.0.0.1:6333:6333"
+
+  embeddings:
+    ports: !reset []
